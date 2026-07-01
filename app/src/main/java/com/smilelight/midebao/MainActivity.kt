@@ -56,9 +56,12 @@ import android.media.session.MediaController
 import android.media.session.PlaybackState
 import android.media.MediaMetadata
 import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.NestedScrollView
 
 
 class MainActivity : AppCompatActivity() {
+
+    private var lastLoggedBpmInt = Int.MIN_VALUE
 
     private var lastAubioBeatTime = -1.0f
     private var lastBeatSample = 0L   // 用于比较节拍位置变化
@@ -66,6 +69,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var motionView: MotionView
 
+    @Volatile
     private var lastPlayingState = false
 
     private var lastMusicTitle = ""
@@ -80,7 +84,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvActionStatus: TextView
     // 感知能量相关
 
-    private var SWITCH_THRESHOLD = 0.15
+    private var SWITCH_THRESHOLD = 0.08
     private val FRAME_RATE = 8.0  // 根据实际帧率调整
     private val PE_WINDOW_SIZE = (FRAME_RATE * 10).toInt()  // 10秒窗口
     private val EPS = 1e-6
@@ -196,26 +200,35 @@ class MainActivity : AppCompatActivity() {
 
                 runOnUiThread {
                     // 1. 处理切歌（检测到新歌名）
+                    // 在 onReceive 中，检测到 title 变化时（即切歌）执行：
                     if (title.isNotEmpty() && title != lastMusicTitle) {
-                        // 切歌：重置PE窗口，发送停止律动，延迟恢复
+                        // 重置所有动态状态
                         peWindow.clear()
-                        appendLog("🔄 切歌检测: 重置感知能量窗口")
+                        beatIntervals.clear()
+                        currentBpmEstimate = 0.0
+                        lastBeatSample = 0L
+                        beatCounter = 0
+                        lastSwitchBeat = 0
+                        currentActionStartBeat = 0
+                        lastBeatTime = 0L
+                        energyHistory.clear()
+                        predictedNextBeatTime = 0L
+                        isPredictionMode = false
+                        appendLog("🔄 切歌检测: 已重置所有状态")
+
+                        // 如果连接且正在跳舞，先停止再重启律动（保持同步）
                         if (isConnected && isDancing) {
                             sendCommand("FE 55 10 F2 55 FE")
-                            // 延迟200ms重新启动
                             Handler(Looper.getMainLooper()).postDelayed({
                                 sendCommand("FE 55 10 F0 55 FE")
                                 appendLog("▶️ 切歌后重新启动律动")
                             }, 200)
                         }
-                        else {
-                            appendLog("⚠️ 未连接或未跳舞，仅模拟切歌")
-                            appendLog("切歌重置")
-                        }
+                        // 更新标题并结束处理（避免执行后续的播放状态判断）
                         lastMusicTitle = title
                         lastPlayingState = isPlaying
                         updateMusicUI(title, artist, isPlaying, duration, position, token)
-                        return@runOnUiThread  // ✅ 关键修正：从 lambda 返回
+                        return@runOnUiThread
                     }
 
                     // 2. 处理播放状态变化（暂停/恢复）
@@ -233,7 +246,16 @@ class MainActivity : AppCompatActivity() {
                         }
                         lastPlayingState = isPlaying
                     }
-
+                    // 替换原有的 if (token != null) 块
+                    if (token != null) {
+                        val controller = MediaController(this@MainActivity, token)
+                        val state = controller.playbackState
+                        val realIsPlaying = state?.state == PlaybackState.STATE_PLAYING
+                        updatePlayState(realIsPlaying)   // 使用真实状态
+                    } else {
+                        // 无 token，降级使用广播中的 isPlaying
+                        updatePlayState(isPlaying)
+                    }
                     // 更新UI
                     updateMusicUI(title, artist, isPlaying, duration, position, token)
                 }
@@ -252,7 +274,7 @@ class MainActivity : AppCompatActivity() {
         "F7" to "快速左右极慢点头",
         "F8" to "随机"
     )
-    private lateinit var scrollLog: ScrollView
+    private lateinit var scrollLog: NestedScrollView
     // 自定义模式相关
     private var currentActionCode = "F8"  // 默认为随机池
     private var currentSpeedLevel = 2      // 1~7
@@ -439,6 +461,13 @@ class MainActivity : AppCompatActivity() {
         // 初始显示“随机”
         tvCurrentAction.text = "当前：随机"
 
+//        scrollLog.setOnTouchListener { _, event ->
+//            if (event.action == MotionEvent.ACTION_DOWN) {
+//                scrollLog.parent.requestDisallowInterceptTouchEvent(true)
+//            }
+//            false // 让子控件（TextView）继续处理滚动
+//        }
+
         musicProgressBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser && musicDuration > 0 && mediaController != null) {
@@ -548,12 +577,12 @@ class MainActivity : AppCompatActivity() {
 //            }
 //            false // 返回 false 让 ListView 自己处理
 //        }
-        tvBeatLog.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_DOWN) {
-                tvBeatLog.parent.requestDisallowInterceptTouchEvent(true)
-            }
-            false
-        }
+//        tvBeatLog.setOnTouchListener { _, event ->
+//            if (event.action == MotionEvent.ACTION_DOWN) {
+//                tvBeatLog.parent.requestDisallowInterceptTouchEvent(true)
+//            }
+//            false
+//        }
         // 启用 TextView 的滚动功能
         tvBeatLog.movementMethod = ScrollingMovementMethod.getInstance()
 
@@ -929,6 +958,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun processAudioChunk(audioBytes: ByteArray): Boolean {
+        if (!lastPlayingState) {
+            // 音乐暂停，不处理任何音频
+            return false
+        }
         // 1. 时域转 double，并计算 RMS
         val samples = DoubleArray(2048)
         var sumSquares = 0.0
@@ -1072,7 +1105,7 @@ class MainActivity : AppCompatActivity() {
 //            lastBeatTime = now
 //        }
         // ---------- 使用 aubio 获取 BPM ----------
-        val hopSize = 1024  // 与 C 代码中的 hop_s 一致
+        val hopSize = 512     // 与 hop_s 一致
         val floatArray = FloatArray(hopSize)
         for (i in 0 until hopSize) {
             val low = audioBytes[i * 2].toInt() and 0xFF
@@ -1081,27 +1114,26 @@ class MainActivity : AppCompatActivity() {
             floatArray[i] = shortVal.toFloat() / 32768.0f
         }
         var bpm = aubioProcessor.getTempo(floatArray)
-        if (bpm > 20 && bpm < 250) {
-            if (currentBpmEstimate == 0.0) {
-                currentBpmEstimate = bpm.toDouble()
+        var bpm2 = aubioProcessor.getTempo(floatArray)
+        val currentBpmInt = bpm.toInt()
+        // 2. 仅当整数部分变化时，才考虑打印日志
+        if (currentBpmInt != lastLoggedBpmInt) {
+            lastLoggedBpmInt = currentBpmInt   // 更新缓存
+//            appendLog("1099 的 getTempo returned: $bpm, lastBeatSample=${aubioProcessor.getLastBeatSample()}")
+            // 3. 根据 BPM 有效性打印不同日志
+            if (bpm in 20.0..250.0) {
+                // 有效 BPM：打印平滑值
+//                appendLog("1. 1097行 aubio BPM: $bpm, smoothed: $currentBpmEstimate")
             } else {
-                currentBpmEstimate = 0.8 * currentBpmEstimate + 0.2 * bpm
-            }
-            // 可选：显示 BPM
-            // tvBPM.text = "BPM: ${currentBpmEstimate.toInt()}"
-        } else {
-            // 忽略无效值，不打印过多日志（避免刷屏）
-            if (beatCounter % 10 == 0) {
-                appendLog("⏳ 等待 BPM 稳定... (当前: $bpm)")
+                // 无效 BPM：增加 beatCounter 条件，避免过于频繁（但整数已变，可保留原条件）
+                if (beatCounter % 10 == 0) {
+                    appendLog("⏳ 等待 BPM 稳定... (当前: $bpm)")
+                }
             }
         }
         if (bpm > 0) {
-            // 如果 BPM 低于 60，可能是分频错误，尝试乘以 2
-            if (bpm < 60) {
-                bpm *= 2
-            }
-            // 如果仍然低于 60，再乘以 2
-            if (bpm < 60) {
+            // 如果 BPM 在 30~80 之间，可能是半速，尝试乘以 2
+            if (bpm in 30.0..80.0) {
                 bpm *= 2
             }
             // 限幅
@@ -1115,7 +1147,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
         // 可选：在日志中对比 aubio BPM 和原有 BPM（用于调试）
-         appendLog("aubio BPM: $bpm, smoothed: $currentBpmEstimate")
+        val currentBpmInt2 = bpm.toInt()
+        if (currentBpmInt2 != lastLoggedBpmInt) {
+//            appendLog("原bpm: $bpm2, aubio BPM: $bpm, smoothed: $currentBpmEstimate")
+            lastLoggedBpmInt = currentBpmInt2
+        }
 
 
 
@@ -1275,9 +1311,9 @@ class MainActivity : AppCompatActivity() {
     private fun appendLog(msg: String) {
         handler.post {
             tvBeatLog.append("$msg\n")
-            scrollLog.post {
-                scrollLog.fullScroll(ScrollView.FOCUS_DOWN)
-            }
+//            scrollLog.post {
+//                scrollLog.fullScroll(ScrollView.FOCUS_DOWN)
+//            }
         }
     }
 
@@ -1848,6 +1884,10 @@ class MainActivity : AppCompatActivity() {
             // 更新播放状态和进度
             if (playbackState != null) {
                 val isPlaying = playbackState.state == PlaybackState.STATE_PLAYING
+                if (isPlaying != lastPlayingState) {
+                    lastPlayingState = isPlaying
+                    // 可选：触发额外逻辑（如暂停/恢复音频处理）
+                }
                 btnPlayPause.setImageResource(
                     if (isPlaying) android.R.drawable.ic_media_pause
                     else android.R.drawable.ic_media_play
@@ -1862,6 +1902,10 @@ class MainActivity : AppCompatActivity() {
                     tvMusicPosition.text = "--:--"
                 }
             } else {
+                // 如果 playbackState 为 null，可认为未播放
+                if (lastPlayingState != false) {
+                    lastPlayingState = false
+                }
                 btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
                 musicProgressBar.progress = 0
                 tvMusicPosition.text = "--:--"
@@ -2126,5 +2170,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updatePlayState(isPlaying: Boolean) {
+        if (isPlaying == lastPlayingState) return
+        lastPlayingState = isPlaying
+        appendLog(if (isPlaying) "▶️ 音乐恢复" else "⏸️ 音乐暂停")
+        motionView.setPaused(!isPlaying)
+        if (isConnected && isDancing) {
+            sendCommand(if (isPlaying) "FE 55 10 F0 55 FE" else "FE 55 10 F2 55 FE")
+        }
+    }
 
 }

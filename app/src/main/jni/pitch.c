@@ -4,6 +4,11 @@
 #include <string.h>
 #include <jni.h>
 #include "aubio.h"
+#include <android/log.h>
+#include <math.h>
+
+#define LOG_TAG "AubioNative"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 // 在文件顶部添加 tempo_out 的 field id（与 Java 中的字段对应）
 jfieldID getTempoOutFieldId(JNIEnv * env, jobject obj)
@@ -44,21 +49,24 @@ jfieldID getInputFieldId(JNIEnv * env, jobject obj)
 // 初始化 tempo 对象（对应 Java 中的 initTempo）
 void Java_com_smilelight_midebao_AubioProcessor_initTempo(JNIEnv * env, jobject obj, jint sampleRate, jint bufferSize)
 {
-    unsigned int win_s = (unsigned int) bufferSize;
-    unsigned int hop_s = win_s / 2;  // 改为与 win_s 相等
-//    unsigned int win_s = 1024;           // 改为 1024
-//    unsigned int hop_s = 256;            // 改为 256
-    unsigned int samplerate = (unsigned int) sampleRate;
-
+//    unsigned int win_s = (unsigned int) bufferSize * 2; // 4096
+//    unsigned int hop_s = (unsigned int) bufferSize;     // 2048
+//    unsigned int samplerate = (unsigned int) sampleRate;
+    unsigned int win_s = 2048;          // 窗口大小（采样点）
+    unsigned int hop_s = 512;           // 步长（每次处理 512 采样）
+    unsigned int samplerate = 16000;
     // 创建 tempo 对象
-//    aubio_tempo_t * o = new_aubio_tempo("default", win_s, hop_s, samplerate);
-    aubio_tempo_t * o = new_aubio_tempo("complex", win_s, hop_s, samplerate);
+    aubio_tempo_t * o = new_aubio_tempo("default", win_s, hop_s, samplerate);
+    // 降低阈值，更易触发
+    aubio_tempo_set_threshold(o, 0.1);  // 默认0.3，降为0.1
+//    aubio_tempo_t * o = new_aubio_tempo("complex", win_s, hop_s, samplerate);
     fvec_t *input = new_fvec(hop_s);        // 输入缓冲区
     fvec_t *tempoOut = new_fvec(2);         // 输出缓冲区（存放节拍信息）
 
     (*env)->SetLongField(env, obj, getPtrFieldId(env, obj), (jlong)(o));
     (*env)->SetLongField(env, obj, getInputFieldId(env, obj), (jlong)(input));
     (*env)->SetLongField(env, obj, getTempoOutFieldId(env, obj), (jlong)(tempoOut));
+
 }
 
 // 处理音频并返回 BPM（对应 Java 中的 getTempo）
@@ -83,10 +91,14 @@ jfloat Java_com_smilelight_midebao_AubioProcessor_getTempo(JNIEnv * env, jobject
 
     // 检查是否检测到节拍
     uint_t last_beat = aubio_tempo_get_last(o);
-    if (last_beat == 0) {
-        return -1;  // 尚未检测到
-    }
     float bpm = aubio_tempo_get_bpm(o);
+
+    // 日志过滤：仅当 bpm 的整数部分变化时才打印
+    static float last_logged_bpm = -999.0f;
+    if (fabsf(bpm - last_logged_bpm) >= 1.0f) {
+        LOGI("getTempo: last_beat=%u, bpm=%f", last_beat, bpm);
+        last_logged_bpm = bpm;
+    }
     return bpm;
 }
 

@@ -570,11 +570,12 @@
                 android:textSize="12sp"
                 android:textColor="#333333" />
         </LinearLayout>
-        <!-- 日志区域（ TextView） -->
-        <ScrollView
+        <!-- 日志区域 -->
+        <androidx.core.widget.NestedScrollView
             android:id="@+id/scrollLog"
             android:layout_width="match_parent"
             android:layout_height="200dp"
+            android:fillViewport="true"
             android:scrollbars="vertical">
 
             <TextView
@@ -585,7 +586,7 @@
                 android:padding="8dp"
                 android:text="等待节拍..."
                 android:textSize="12sp" />
-        </ScrollView>
+        </androidx.core.widget.NestedScrollView>
 
         <!-- 频谱进度条 -->
         <ProgressBar
