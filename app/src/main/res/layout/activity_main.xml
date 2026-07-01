@@ -1,0 +1,602 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#F5F5F5">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- 标题 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🎵 免费律动控制器"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:padding="16dp" />
+
+        <!-- 状态显示 -->
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="未连接"
+            android:textSize="16sp"
+            android:background="#FFF"
+            android:padding="12dp"
+            android:textAlignment="center" />
+        <!-- 音乐控制面板 -->
+        <!-- 音乐控制面板（始终显示） -->
+        <LinearLayout
+            android:id="@+id/musicPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:padding="8dp"
+            android:layout_marginTop="8dp">
+
+            <!-- 歌曲信息 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tvMusicTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="未播放"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:maxLines="1"
+                    android:ellipsize="marquee"
+                    android:marqueeRepeatLimit="marquee_forever"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:singleLine="true" />
+
+                <TextView
+                    android:id="@+id/tvMusicArtist"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textSize="12sp"
+                    android:textColor="#666666"
+                    android:layout_marginStart="8dp" />
+            </LinearLayout>
+
+            <!-- 进度条 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp">
+
+                <TextView
+                    android:id="@+id/tvMusicPosition"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0:00"
+                    android:textSize="12sp"
+                    android:textColor="#888888" />
+
+                <SeekBar
+                    android:id="@+id/musicProgressBar"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:max="100"
+                    android:progress="0"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp" />
+
+                <TextView
+                    android:id="@+id/tvMusicDuration"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0:00"
+                    android:textSize="12sp"
+                    android:textColor="#888888" />
+            </LinearLayout>
+
+            <!-- 控制按钮 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:layout_marginTop="4dp">
+
+                <ImageButton
+                    android:id="@+id/btnPrev"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@android:drawable/ic_media_previous"
+                    android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+                <ImageButton
+                    android:id="@+id/btnPlayPause"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:src="@android:drawable/ic_media_play"
+                    android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+                <ImageButton
+                    android:id="@+id/btnNext"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@android:drawable/ic_media_next"
+                    android:background="?android:attr/selectableItemBackgroundBorderless" />
+            </LinearLayout>
+        </LinearLayout>
+        <!-- 连接按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="12dp">
+
+            <Button
+                android:id="@+id/btnConnect"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="连接设备"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/btnDisconnect"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="断开"
+                android:enabled="false" />
+        </LinearLayout>
+
+        <!-- 手动选择设备按钮 -->
+<!--        <Button-->
+<!--            android:id="@+id/btnSelectDevice"-->
+<!--            android:layout_width="match_parent"-->
+<!--            android:layout_height="wrap_content"-->
+<!--            android:layout_marginTop="8dp"-->
+<!--            android:text="📋 选择设备（手动）"-->
+<!--            android:backgroundTint="@android:color/holo_blue_dark"-->
+<!--            android:textColor="#FFFFFF" />-->
+
+<!--        &lt;!&ndash; 设备列表 &ndash;&gt;-->
+<!--        <ListView-->
+<!--            android:id="@+id/deviceListView"-->
+<!--            android:layout_width="match_parent"-->
+<!--            android:layout_height="120dp"-->
+<!--            android:layout_marginTop="8dp"-->
+<!--            android:visibility="gone"-->
+<!--            android:background="#FFFFFF"-->
+<!--            android:divider="#CCCCCC"-->
+<!--            android:dividerHeight="1dp" />-->
+
+        <!-- 音乐律动开关 -->
+        <Button
+            android:id="@+id/btnDance"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="▶ 启动随乐起舞"
+            android:backgroundTint="@color/purple_500" />
+
+        <View style="@style/Divider" />
+
+        <!-- 速度调节 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⚡ 动作速度调节（仅一三律动生效）"
+            android:textStyle="bold"
+            android:layout_marginTop="8dp" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button
+                android:id="@+id/btnSpeedSlow"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="E0 慢"
+                android:layout_marginEnd="4dp" />
+            <Button
+                android:id="@+id/btnSpeedFast"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="E1 快"
+                android:layout_marginStart="4dp" />
+        </LinearLayout>
+
+        <View style="@style/Divider" />
+        <!-- 快速控制按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="12dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🎮 快速控制"
+                android:textStyle="bold"
+                android:textSize="14sp" />
+
+            <!-- 第一行：方向按钮 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnUp"
+                    style="@style/QuickControlButton"
+                    android:text="上" />
+                <Button
+                    android:id="@+id/btnDown"
+                    style="@style/QuickControlButton"
+                    android:text="下" />
+                <Button
+                    android:id="@+id/btnLeft"
+                    style="@style/QuickControlButton"
+                    android:text="左" />
+                <Button
+                    android:id="@+id/btnRight"
+                    style="@style/QuickControlButton"
+                    android:text="右" />
+                <Button
+                    android:id="@+id/btnCenter"
+                    style="@style/QuickControlButton"
+                    android:text="回中" />
+            </LinearLayout>
+
+            <!-- 第二行：表情和音乐控制 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp">
+
+                <Button
+                    android:id="@+id/btnHappy"
+                    style="@style/QuickControlButton"
+                    android:text="😄 开心" />
+                <Button
+                    android:id="@+id/btnStartMusic"
+                    style="@style/QuickControlButton"
+                    android:text="🎵 音乐开" />
+                <Button
+                    android:id="@+id/btnStopMusic"
+                    style="@style/QuickControlButton"
+                    android:text="⏹ 音乐关" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <View style="@style/Divider" />
+        <!-- 动作池选择 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🎯 动作池选择"
+            android:textStyle="bold" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button
+                android:id="@+id/btnPoolAll"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="全部动作池"
+                android:layout_marginEnd="4dp" />
+            <Button
+                android:id="@+id/btnPoolAdjustable"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="可调速池(1-5)"
+                android:layout_marginStart="4dp" />
+        </LinearLayout>
+
+        <!-- 模式切换 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="模式："
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <RadioGroup
+                android:id="@+id/rgMode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rbAdaptive"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="自适应"
+                    android:checked="true" />
+
+                <RadioButton
+                    android:id="@+id/rbCustom"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="自定义" />
+            </RadioGroup>
+        </LinearLayout>
+        <!-- 动作选择（自定义模式） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="12dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🎮 自定义模式 - 选择动作"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvCurrentAction"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="当前：随机"
+                android:textStyle="bold"
+                android:textColor="#FF5722" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="5">
+
+            <Button
+                android:id="@+id/btnAction1"
+                style="@style/ActionButton"
+                android:text="半圆摆动" />
+            <Button
+                android:id="@+id/btnAction2"
+                style="@style/ActionButton"
+                android:text="快速点头" />
+            <Button
+                android:id="@+id/btnAction3"
+                style="@style/ActionButton"
+                android:text="W形摇头" />
+            <Button
+                android:id="@+id/btnAction4"
+                style="@style/ActionButton"
+                android:text="中速左右快速点头" />
+            <Button
+                android:id="@+id/btnAction5"
+                style="@style/ActionButton"
+                android:text="快速左右极慢点头" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button
+                android:id="@+id/btnActionRandom"
+                style="@style/ActionButton"
+                android:layout_weight="1"
+                android:text="🎲 随机" />
+            <Button
+                android:id="@+id/btnActionStop"
+                style="@style/ActionButton"
+                android:layout_weight="1"
+                android:text="⏹ 停止" />
+        </LinearLayout>
+
+        <!-- 速度档位滑块（仅动作1/3有效） -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⚡ 速度档位 (1~7)"
+            android:textStyle="bold"
+            android:layout_marginTop="8dp" />
+
+        <SeekBar
+            android:id="@+id/speedSeekBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="6"
+            android:progress="1"
+            android:thumb="@android:drawable/btn_star_big_on" />
+        <TextView
+            android:id="@+id/tvSpeedLevel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="当前档位：2"
+            android:gravity="center" />
+        <View style="@style/Divider" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="切换阈值:"
+                android:textSize="12sp" />
+
+            <SeekBar
+                android:id="@+id/seekThreshold"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:max="6"
+                android:progress="2" /> <!-- 0.15 对应 progress=2 -->
+
+            <TextView
+                android:id="@+id/tvThresholdValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0.15"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- 切换频率 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⏱️ 动作切换频率"
+            android:textStyle="bold" />
+        <RadioGroup
+            android:id="@+id/rgFrequency"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <RadioButton
+                android:id="@+id/rbSlow"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="慢(3拍)"
+                android:checked="false" />
+            <RadioButton
+                android:id="@+id/rbMedium"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="中(2拍)"
+                android:checked="true" />
+            <RadioButton
+                android:id="@+id/rbFast"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="快(1拍)" />
+        </RadioGroup>
+
+        <!-- 🤖 跳舞动画 -->
+        <com.smilelight.midebao.MotionView
+            android:id="@+id/motionView"
+            android:layout_width="340dp"
+            android:layout_height="340dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp" />
+
+        <!-- 日志标题 + 清空按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="12dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="📋 日志"
+                android:textStyle="bold"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/btnClearLog"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="清空"
+                android:textSize="12sp"
+                android:paddingLeft="12dp"
+                android:paddingRight="12dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:backgroundTint="@android:color/holo_red_dark"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
+
+        <!-- 实时音乐参数显示 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:id="@+id/tvPE"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="PE: 0.00"
+                android:textSize="12sp"
+                android:textColor="#333333" />
+
+            <TextView
+                android:id="@+id/tvBPM"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="BPM: 0"
+                android:textSize="12sp"
+                android:textColor="#333333" />
+
+            <TextView
+                android:id="@+id/tvActionStatus"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="动作: 无"
+                android:textSize="12sp"
+                android:textColor="#333333" />
+        </LinearLayout>
+        <!-- 日志区域（ TextView） -->
+        <ScrollView
+            android:id="@+id/scrollLog"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:scrollbars="vertical">
+
+            <TextView
+                android:id="@+id/tvBeatLog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#FFF"
+                android:padding="8dp"
+                android:text="等待节拍..."
+                android:textSize="12sp" />
+        </ScrollView>
+
+        <!-- 频谱进度条 -->
+        <ProgressBar
+            android:id="@+id/energyBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="12dp"
+            android:layout_marginTop="8dp"
+            android:progress="0"
+            android:max="100"
+            android:progressTint="@color/purple_500" />
+
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>
