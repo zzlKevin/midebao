@@ -1087,23 +1087,23 @@ class MainActivity : AppCompatActivity() {
         currentMidHighEnergy = midHighEnergy
 
         // BPM 更新 (保留)
-//        if (isBeat) {
-//            val now = System.currentTimeMillis()
-//            if (lastBeatTime > 0) {
-//                val interval = now - lastBeatTime
-//                beatIntervals.add(interval)
-//                if (beatIntervals.size > 20) beatIntervals.removeAt(0)
-//                if (beatIntervals.isNotEmpty()) {
-//                    val avgInterval = beatIntervals.average()
-//                    currentBpmEstimate = 60000.0 / avgInterval
-//                }
-//                val mean = beatIntervals.average()
-//                val variance = beatIntervals.map { (it - mean) * (it - mean) }.average()
-//                val stdDev = Math.sqrt(variance)
-//                currentStability = if (mean > 0) (1f - (stdDev / mean).toFloat()).coerceIn(0f, 1f) else 0.5f
-//            }
-//            lastBeatTime = now
-//        }
+        if (isBeat) {
+            val now = System.currentTimeMillis()
+            if (lastBeatTime > 0) {
+                val interval = now - lastBeatTime
+                beatIntervals.add(interval)
+                if (beatIntervals.size > 20) beatIntervals.removeAt(0)
+                if (beatIntervals.isNotEmpty()) {
+                    val avgInterval = beatIntervals.average()
+                    currentBpmEstimate = 60000.0 / avgInterval
+                }
+                val mean = beatIntervals.average()
+                val variance = beatIntervals.map { (it - mean) * (it - mean) }.average()
+                val stdDev = Math.sqrt(variance)
+                currentStability = if (mean > 0) (1f - (stdDev / mean).toFloat()).coerceIn(0f, 1f) else 0.5f
+            }
+            lastBeatTime = now
+        }
         // ---------- 使用 aubio 获取 BPM ----------
         val hopSize = 512     // 与 hop_s 一致
         val floatArray = FloatArray(hopSize)
@@ -1114,7 +1114,7 @@ class MainActivity : AppCompatActivity() {
             floatArray[i] = shortVal.toFloat() / 32768.0f
         }
         var bpm = aubioProcessor.getTempo(floatArray)
-        var bpm2 = aubioProcessor.getTempo(floatArray)
+//        var bpm2 = aubioProcessor.getTempo(floatArray)
         val currentBpmInt = bpm.toInt()
         // 2. 仅当整数部分变化时，才考虑打印日志
         if (currentBpmInt != lastLoggedBpmInt) {
@@ -1174,7 +1174,7 @@ class MainActivity : AppCompatActivity() {
 
         // 自适应模式
         if (isAdaptiveMode) {
-            // ========== 主切换逻辑：每2拍计算一次 ==========
+            // ========== 主切换逻辑：每frequencyDivider拍计算一次 ==========
             if (beatCounter % frequencyDivider == 0) {
                 appendLog("⚡ 开始动作选择 (节拍 ${beatCounter})")
                 val candidate = selectActionByScoring()
@@ -2078,7 +2078,7 @@ class MainActivity : AppCompatActivity() {
         val bassRatio = if (currentBassEnergy + currentMidHighEnergy > 0) currentBassEnergy / (currentBassEnergy + currentMidHighEnergy) else 0.0
         val isDJ = bassRatio > 1.5 && currentSpectralFlux > 0.5 // 阈值可调
         val isPiano = currentHighFreqRatio > 0.3 && currentOnsetStrength < 0.1
-
+        appendLog(" isDJ=$isDJ, isPiano=$isPiano")
         var adjustedTargetPE = targetPE
         if (isDJ) {
             // DJ: 提高对动作2和动作1/3高档位的偏好
@@ -2109,8 +2109,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 总得分（权重可调）
-        val wBeat = 0.5
-        val wEnergy = 0.4
+        val wBeat = 0.7
+        val wEnergy = 0.2
         val wPenalty = 0.1
         val totalScore = wBeat * beatScore + wEnergy * energyScore + wPenalty * switchingPenalty
 
