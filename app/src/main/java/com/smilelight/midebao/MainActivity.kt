@@ -1087,23 +1087,23 @@ class MainActivity : AppCompatActivity() {
         currentMidHighEnergy = midHighEnergy
 
         // BPM 更新 (保留)
-        if (isBeat) {
-            val now = System.currentTimeMillis()
-            if (lastBeatTime > 0) {
-                val interval = now - lastBeatTime
-                beatIntervals.add(interval)
-                if (beatIntervals.size > 20) beatIntervals.removeAt(0)
-                if (beatIntervals.isNotEmpty()) {
-                    val avgInterval = beatIntervals.average()
-                    currentBpmEstimate = 60000.0 / avgInterval
-                }
-                val mean = beatIntervals.average()
-                val variance = beatIntervals.map { (it - mean) * (it - mean) }.average()
-                val stdDev = Math.sqrt(variance)
-                currentStability = if (mean > 0) (1f - (stdDev / mean).toFloat()).coerceIn(0f, 1f) else 0.5f
-            }
-            lastBeatTime = now
-        }
+//        if (isBeat) {
+//            val now = System.currentTimeMillis()
+//            if (lastBeatTime > 0) {
+//                val interval = now - lastBeatTime
+//                beatIntervals.add(interval)
+//                if (beatIntervals.size > 20) beatIntervals.removeAt(0)
+//                if (beatIntervals.isNotEmpty()) {
+//                    val avgInterval = beatIntervals.average()
+//                    currentBpmEstimate = 60000.0 / avgInterval
+//                }
+//                val mean = beatIntervals.average()
+//                val variance = beatIntervals.map { (it - mean) * (it - mean) }.average()
+//                val stdDev = Math.sqrt(variance)
+//                currentStability = if (mean > 0) (1f - (stdDev / mean).toFloat()).coerceIn(0f, 1f) else 0.5f
+//            }
+//            lastBeatTime = now
+//        }
         // ---------- 使用 aubio 获取 BPM ----------
         val hopSize = 512     // 与 hop_s 一致
         val floatArray = FloatArray(hopSize)

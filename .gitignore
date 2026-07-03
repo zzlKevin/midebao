@@ -31,6 +31,7 @@ replay_pid*
 
 ### Gradle ###
 .gradle
+.gradle/
 **/build/
 !src/**/build/
 
@@ -57,3 +58,12 @@ gradle-app.setting
 *.hprof
 
 # End of https://www.toptal.com/developers/gitignore/api/gradle
+.gradle/8.2/executionHistory/executionHistory.bin
+.gradle/8.2/executionHistory/executionHistory.lock
+.gradle/8.2/fileHashes/fileHashes.bin
+.gradle/8.2/fileHashes/fileHashes.lock
+.gradle/8.2/fileHashes/resourceHashesCache.bin
+.gradle/buildOutputCleanup/buildOutputCleanup.lock
+.gradle/file-system.probe
+.gradle/8.2/executionHistory/executionHistory.bin
+.gradle/**
