@@ -3,6 +3,7 @@ package com.smilelight.midebao
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
+import android.util.Log
 import android.view.View
 import androidx.core.animation.doOnEnd
 import kotlin.math.*
@@ -28,7 +29,7 @@ class MotionView @JvmOverloads constructor(
     private var animator: android.animation.ValueAnimator? = null
     private var currentPeriodMs: Long = 3000L  // 默认3秒
 
-    private var ratio: Double = 1.5
+    private var ratio: Double = 1.0  //调慢多少倍
 
     // 绘制参数
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -52,9 +53,14 @@ class MotionView @JvmOverloads constructor(
         if (paused) {
             animator?.pause()
         } else {
-            animator?.resume()
-            if (animator == null) {
-                startAnimation()
+            if (width > 0 && height > 0) {
+                animator?.resume()
+                if (animator == null) startAnimation()
+            } else {
+                post {
+                    animator?.resume()
+                    if (animator == null) startAnimation()
+                }
             }
         }
     }
@@ -62,18 +68,40 @@ class MotionView @JvmOverloads constructor(
     private fun updatePeriod() {
         // 获取基础周期（秒）
         val basePeriod = when (actionCode) {
-            "F3" -> 3.0
-            "F4" -> 4.0   // 动作2固定周期4秒
-            "F5" -> 3.0
-            "F6" -> 5.2   // 动作4固定周期5.2秒
-            "F7" -> 24.5  // 动作5固定周期24.5秒
+            "F3" -> {
+                // 根据档位查表
+                when (speedLevel) {
+                    1 -> 3.0
+                    2 -> 1.5
+                    3 -> 1.0
+                    4 -> 0.8
+                    5 -> 0.6
+                    6 -> 0.5
+                    7 -> 0.4
+                    else -> 3.0
+                }
+            }
+            "F4" -> 2.0
+            "F5" -> {
+                when (speedLevel) {
+                    1 -> 4.0
+                    2 -> 2.0
+                    3 -> 1.3
+                    4 -> 1.0
+                    5 -> 0.8
+                    6 -> 0.6
+                    7 -> 0.5
+                    else -> 4.0
+                }
+            }
+            "F6" -> 4.4
+            "F7" -> 24.5
             else -> 3.0
         }
 
+        // 只有 F3 和 F5 受档位影响（但我们已经直接查表了，所以这里不再需要公式）
         val periodSec = when (actionCode) {
-            // 只有动作1(F3)和动作3(F5)受档位影响
-            "F3", "F5" -> basePeriod / 2.0.pow(speedLevel - 1)
-            // 其他动作固定速度，不受档位影响
+            "F3", "F5" -> basePeriod  // 直接使用查表结果
             else -> basePeriod
         }
 
@@ -136,14 +164,18 @@ class MotionView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
 //        super.onDraw(canvas)
-
-
         // 清空背景（透明）
 //        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
         val w = width
         val h = height
-        if (w == 0 || h == 0) return
+        if (w <= 0 || h <= 0) {
+            Log.w("MotionView", "onDraw with invalid size: w=$w, h=$h")
+            // 尺寸无效，请求重绘（等待下一次布局）
+            postInvalidate()
+
+            return
+        }
 
         // 计算绘制区域
         val pad = min(w, h) * 0.1f
@@ -151,17 +183,23 @@ class MotionView @JvmOverloads constructor(
         val cy = h / 2f
         val radius = min(w - 2 * pad, h - 2 * pad) / 2f
 
+        // 窄边界：左右各留 25% 的空白，只使用中间 50% 的区域
+        val narrowMargin = w * 0.38f  //左右空白百分比 总=2x
+        val narrowLeft = narrowMargin
+        val narrowRight = w - narrowMargin
+
         // 根据动作类型计算当前点位置
         val point = when (actionCode) {
-            "F3" -> pointOnSemicircle(phase, cx, cy, radius)  // phase 0~1
-            "F4" -> pointOnSin5(phase, pad, w - pad, cy, radius * 0.38f)
-            "F5" -> pointOnW3(phase, pad, w - pad, cy, radius * 0.36f)
-            "F6" -> pointOnV4(phase, pad, w - pad, cy, radius * 0.36f, 4, isReverse)
-            "F7" -> pointOnV4(phase, pad, w - pad, cy, radius * 0.36f, 2, isReverse)
-            "F8" -> pointOnSemicircle(phase, cx, cy, radius)  // phase 0~1
+            "F3" -> pointOnSemicircle(phase, cx, cy, radius * 0.20f)  // phase 0~1 （半圆轨迹，幅度 = radius），如果觉得摆动大就减小他
+            // F4~F7 使用窄边界，同时点头振幅也可以适当减小
+            "F4" -> pointOnSin5(phase, narrowLeft, narrowRight, cy, radius * 0.20f)   // 振幅系数从0.38降到0.25
+            "F5" -> pointOnW3(phase, narrowLeft, narrowRight, cy, radius * 0.20f)     // 振幅系数从0.36降到0.25
+            "F6" -> pointOnV4(phase, narrowLeft, narrowRight, cy, radius * 0.20f, 4, isReverse)
+            "F7" -> pointOnV4(phase, narrowLeft, narrowRight, cy, radius * 0.20f, 2, isReverse)
+            "F8" -> pointOnSemicircle(phase, cx, cy, radius * 0.20f)   // phase 0~1
             else -> PointF(cx, cy)
         }
-        drawDot(canvas, point, radius * 0.09f)
+        drawDot(canvas, point, radius * 0.40f) // 0.09f 是球体高度基数
     }
 
     private fun drawDot(canvas: Canvas, pt: PointF, barH: Float) {
@@ -256,12 +294,15 @@ class MotionView @JvmOverloads constructor(
         this.speedLevel = speed.coerceIn(1, 7)
         this.isPaused = paused
         this.isReverse = false
-        updatePeriod()           // 先更新周期
-        if (!isPaused) {
-            restartAnimation()   // 再重启动画（使用新周期）
+        updatePeriod()
+        // 检查视图是否已测量
+        if (width > 0 && height > 0) {
+            if (!isPaused) restartAnimation() else { animator?.pause(); invalidate() }
         } else {
-            animator?.pause()
-            invalidate()
+            // 视图尚未布局，延迟执行
+            post {
+                if (!isPaused) restartAnimation() else { animator?.pause(); invalidate() }
+            }
         }
     }
 

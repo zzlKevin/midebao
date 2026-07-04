@@ -204,10 +204,11 @@ class MainActivity : AppCompatActivity() {
                 val token = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     intent.getParcelableExtra<MediaSession.Token>("media_session_token")
                 } else null
-
+                appendLog("📡 收到广播: title=$title, lastMusicTitle=$lastMusicTitle, artist=$artist, isPlaying=$isPlaying, duration=$duration")
                 runOnUiThread {
                     // 1. 处理切歌（检测到新歌名）
                     if (title.isNotEmpty() && title != lastMusicTitle) {
+                        appendLog("切歌: title=$title, lastMusicTitle=$lastMusicTitle")
                         // 重置所有动态状态
                         peWindow.clear()
                         beatIntervals.clear()
@@ -223,11 +224,20 @@ class MainActivity : AppCompatActivity() {
                         appendLog("🔄 切歌检测: 已重置所有状态")
 
                         if (isConnected && isDancing) {
+                            // 先停止律动
                             sendCommand("FE 55 10 F2 55 FE")
+                            tvPE.text = "PE: ----"
+                            tvBPM.text = "BPM: ----"
+                            tvActionStatus.text = "动作: ----"
+                            Thread.sleep(100)
+                            sendCommand("FE 55 10 F3 55 FE") //重置动作1
+                            initSpeed()
+                            tvActionStatus.text = "动作: 半圆摆动 (档1)"
+                            // 延迟 1 秒后重新启动
                             Handler(Looper.getMainLooper()).postDelayed({
                                 sendCommand("FE 55 10 F0 55 FE")
                                 appendLog("▶️ 切歌后重新启动律动")
-                            }, 200)
+                            }, 1000) // 1000ms = 1秒
                         }
                         // 更新标题（但不更新 lastPlayingState，留到下面统一处理）
                         lastMusicTitle = title
@@ -458,6 +468,8 @@ class MainActivity : AppCompatActivity() {
         btnNext.setOnClickListener {
             mediaController?.transportControls?.skipToNext()
         }
+
+
         scrollLog = findViewById(R.id.scrollLog)
         tvStatus = findViewById(R.id.tvStatus)
         tvBeatLog = findViewById(R.id.tvBeatLog)
@@ -477,6 +489,9 @@ class MainActivity : AppCompatActivity() {
 //            }
 //            false // 让子控件（TextView）继续处理滚动
 //        }
+        btnDisconnect.setOnClickListener {
+            disconnect()
+        }
 
         musicProgressBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -536,6 +551,9 @@ class MainActivity : AppCompatActivity() {
         btnActionRandom.setOnClickListener { switchAction("F8") }
         btnActionStop.setOnClickListener {
             sendCommand("FE 55 10 F2 55 FE")
+            tvPE.text = "PE: ----"
+            tvBPM.text = "BPM: ----"
+            tvActionStatus.text = "动作: ----"
             appendLog("⏹ 已停止律动")
         }
 
@@ -591,6 +609,9 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnStopMusic).setOnClickListener {
             sendCommand("FE 55 10 F2 55 FE")
+            tvPE.text = "PE: ----"
+            tvBPM.text = "BPM: ----"
+            tvActionStatus.text = "动作: ----"
             appendLog("⏹ 关闭音乐律动")
         }
 
@@ -790,7 +811,11 @@ class MainActivity : AppCompatActivity() {
                 appendLog("❌ 连接断开：$deviceName ($deviceAddress)")
                 gatt.close()
                 // 启动重连（但不会停止音频捕获）
-                scheduleReconnect()
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                    scheduleReconnect()
+                } else {
+                    appendLog("🔒 用户主动断开或重连已禁用，不自动重连")
+                }
             }
         }
 
@@ -877,12 +902,21 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun disconnect() {
+        //尝试断开
+        appendLog("断开蓝牙")
         // 断开连接并停止重连
         cancelReconnect()
         // 重置重连计数器（用户主动断开）
-        reconnectAttempts = 0
+        reconnectAttempts = MAX_RECONNECT_ATTEMPTS
         disconnectInternal()
         // 只有在舞蹈状态下才停止音频捕获
+        // 重置 UI 状态
+        runOnUiThread {
+            tvStatus.text = "已断开"
+            btnDisconnect.isEnabled = false
+            btnConnect.isEnabled = true
+        }
+        // 如果正在舞蹈，停止音频捕获
         if (isDancing) {
             stopAudioCapture()
             btnDance.text = "▶ 启动随乐起舞"
@@ -986,7 +1020,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun processAudioChunk(audioBytes: ByteArray): Boolean {
         if (!lastPlayingState) {
-            appendLog("lastPlayingState:$lastPlayingState")
+//            appendLog("lastPlayingState:$lastPlayingState")
             // 音乐暂停，不处理任何音频
             return false
         }
@@ -1322,6 +1356,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun stopDance() {
         isDancing = false
+        // 先停止律动
+        sendCommand("FE 55 10 F2 55 FE")
+        tvPE.text = "PE: ----"
+        tvBPM.text = "BPM: ----"
+        tvActionStatus.text = "动作: ----"
         btnDance.text = "▶ 启动随乐起舞"
         stopAudioCapture()
         // 🆕 暂停动画
@@ -1528,7 +1567,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     } else {
                         // 可选：打印所有发现设备用于调试
-                        appendLog("📡 发现: $name ($address)")
+//                        appendLog("📡 发现: $name ($address)")
                     }
                 }
 
@@ -1875,6 +1914,9 @@ class MainActivity : AppCompatActivity() {
         // 2. 如果已连接，发送指令
         if (isConnected) {
             sendCommand("FE 55 10 F2 55 FE")
+            tvPE.text = "PE: ----"
+            tvBPM.text = "BPM: ----"
+            tvActionStatus.text = "动作: ----"
             Thread.sleep(100)
             sendCommand(actionMap[actionCode] ?: return)
             Thread.sleep(100)
