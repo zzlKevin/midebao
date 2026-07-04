@@ -28,6 +28,8 @@ class MotionView @JvmOverloads constructor(
     private var animator: android.animation.ValueAnimator? = null
     private var currentPeriodMs: Long = 3000L  // 默认3秒
 
+    private var ratio: Double = 1.5
+
     // 绘制参数
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
@@ -75,7 +77,7 @@ class MotionView @JvmOverloads constructor(
             else -> basePeriod
         }
 
-        currentPeriodMs = (periodSec * 1000).toLong()
+        currentPeriodMs = (periodSec * 1000 * ratio).toLong()
     }
 
     private fun startAnimation() {

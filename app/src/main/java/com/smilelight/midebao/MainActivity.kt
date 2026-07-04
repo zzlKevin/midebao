@@ -13,6 +13,7 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -55,11 +56,17 @@ import android.provider.Settings
 import android.media.session.MediaController
 import android.media.session.PlaybackState
 import android.media.MediaMetadata
+import android.media.session.MediaSessionManager
 import androidx.appcompat.app.AlertDialog
 import androidx.core.widget.NestedScrollView
 
 
 class MainActivity : AppCompatActivity() {
+
+    private lateinit var mediaSessionManager: MediaSessionManager
+
+    private var isDragging = false
+    private var progressUpdateRunnable: Runnable? = null
 
     private var lastLoggedBpmInt = Int.MIN_VALUE
 
@@ -145,7 +152,7 @@ class MainActivity : AppCompatActivity() {
     private var previousSpectrum: FloatArray? = null        // 上一帧的频谱幅值（用于计算通量）
     private val fluxHistory = mutableListOf<Float>()        // 用于平滑通量（可选）
     private var reconnectAttempts = 0
-    private val MAX_RECONNECT_ATTEMPTS = 1
+    private val MAX_RECONNECT_ATTEMPTS = 3
     // BPM 预测相关
     private var predictedNextBeatTime = 0L          // 预测的下一个节拍时间戳（毫秒）
     private var isPredictionMode = false           // 是否启用预测（当数据足够时启用）
@@ -200,7 +207,6 @@ class MainActivity : AppCompatActivity() {
 
                 runOnUiThread {
                     // 1. 处理切歌（检测到新歌名）
-                    // 在 onReceive 中，检测到 title 变化时（即切歌）执行：
                     if (title.isNotEmpty() && title != lastMusicTitle) {
                         // 重置所有动态状态
                         peWindow.clear()
@@ -216,7 +222,6 @@ class MainActivity : AppCompatActivity() {
                         isPredictionMode = false
                         appendLog("🔄 切歌检测: 已重置所有状态")
 
-                        // 如果连接且正在跳舞，先停止再重启律动（保持同步）
                         if (isConnected && isDancing) {
                             sendCommand("FE 55 10 F2 55 FE")
                             Handler(Looper.getMainLooper()).postDelayed({
@@ -224,42 +229,41 @@ class MainActivity : AppCompatActivity() {
                                 appendLog("▶️ 切歌后重新启动律动")
                             }, 200)
                         }
-                        // 更新标题并结束处理（避免执行后续的播放状态判断）
+                        // 更新标题（但不更新 lastPlayingState，留到下面统一处理）
                         lastMusicTitle = title
-                        lastPlayingState = isPlaying
-                        updateMusicUI(title, artist, isPlaying, duration, position, token)
-                        return@runOnUiThread
+                        // 不要 return，继续执行下面的状态更新
                     }
 
-                    // 2. 处理播放状态变化（暂停/恢复）
-                    if (isPlaying != lastPlayingState) {
-                        // ✅ 无论是否连接，都输出状态变化
-                        appendLog(if (isPlaying) "▶️ 音乐恢复" else "⏸️ 音乐暂停")
-                        // 🆕 控制动画暂停/恢复（与音乐同步）
-                        motionView.setPaused(!isPlaying)  // 暂停时动画暂停，恢复时动画继续
-                        if (isConnected && isDancing) {
-                            if (isPlaying) {
-                                sendCommand("FE 55 10 F0 55 FE")
-                            } else {
-                                sendCommand("FE 55 10 F2 55 FE")
-                            }
-                        }
-                        lastPlayingState = isPlaying
-                    }
-                    // 替换原有的 if (token != null) 块
-                    if (token != null) {
+                    // 2. 获取真实的播放状态（优先从 token 获取）
+                    val realIsPlaying = if (token != null) {
                         val controller = MediaController(this@MainActivity, token)
-                        val state = controller.playbackState
-                        val realIsPlaying = state?.state == PlaybackState.STATE_PLAYING
-                        updatePlayState(realIsPlaying)   // 使用真实状态
+                        controller.playbackState?.state == PlaybackState.STATE_PLAYING
                     } else {
-                        // 无 token，降级使用广播中的 isPlaying
-                        updatePlayState(isPlaying)
+                        isPlaying
                     }
-                    // 更新UI
-                    updateMusicUI(title, artist, isPlaying, duration, position, token)
+                    appendLog("musicUpdateReceiver ：MusicReceiver, realIsPlaying=$realIsPlaying, isPlaying=$isPlaying")
+
+                    // 3. 统一更新播放状态（只在此处修改 lastPlayingState）
+                    if (realIsPlaying != lastPlayingState) {
+                        lastPlayingState = realIsPlaying
+                        appendLog(if (realIsPlaying) "▶️ 音乐恢复" else "⏸️ 音乐暂停")
+                        motionView.setPaused(!realIsPlaying)
+                        if (isConnected && isDancing) {
+                            sendCommand(if (realIsPlaying) "FE 55 10 F0 55 FE" else "FE 55 10 F2 55 FE")
+                        }
+                    }
+
+                    // 4. 更新 UI（歌曲信息、进度等）
+                    // 🔥 检查数据是否有效，避免空数据覆盖UI
+                    val hasValidData = title.isNotEmpty() || duration > 0
+                    if (hasValidData) {
+                        updateMusicUI(title, artist, realIsPlaying, duration, position, token)
+                    } else {
+                        appendLog("⏳ 收到空数据广播，跳过UI更新，仅状态已处理")
+                    }
                 }
             }
+
         }
     }
 
@@ -395,6 +399,12 @@ class MainActivity : AppCompatActivity() {
         tvThresholdValue = findViewById(R.id.tvThresholdValue)
         // 在 onCreate 中
         motionView = findViewById(R.id.motionView)
+
+        // 主动查询当前播放状态
+        fetchCurrentMediaInfo()
+        mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+        mediaSessionManager.addOnActiveSessionsChangedListener(sessionCallback, ComponentName(this, MusicNotificationListenerService::class.java))
+
         // 初始设置为动作1，档位2，不暂停
         motionView.setAction("F3", 2, paused = false)
 
@@ -470,13 +480,27 @@ class MainActivity : AppCompatActivity() {
 
         musicProgressBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser && musicDuration > 0 && mediaController != null) {
-                    val position = (progress / 100f * musicDuration).toLong()
-                    mediaController?.transportControls?.seekTo(position)
+                // 如果 fromUser == true，可以在这里更新一个临时预览文本，但不执行 seekTo
+                if (fromUser) {
+                    // 可选的：显示当前拖动的进度预览
+                    tvMusicPosition.text = formatTime((progress / 100f * musicDuration).toLong())
                 }
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                isDragging = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                isDragging = false
+                if (musicDuration > 0 && mediaController != null) {
+                    val progress = seekBar?.progress ?: 0
+                    val position = (progress / 100f * musicDuration).toLong()
+                    mediaController?.transportControls?.seekTo(position)
+                    // 立即刷新一次进度显示，避免延迟
+                    updateProgressFromController()
+                }
+            }
         })
 
 
@@ -667,7 +691,7 @@ class MainActivity : AppCompatActivity() {
         // 启动时自动连接上次设备
         connectToLastDevice()
         // 初始化音乐面板（无歌曲）
-        updateMusicUI("", "", false, -1, -1,null)
+        //updateMusicUI("", "", false, -1, -1,null)
     }
 
     override fun onDestroy() {
@@ -676,8 +700,11 @@ class MainActivity : AppCompatActivity() {
         disconnect()
         cancelReconnect()
 //        stopListScan()
+        // 移除 MediaSession 监听器，避免内存泄漏
+        mediaSessionManager.removeOnActiveSessionsChangedListener(sessionCallback)
         // 释放 MediaProjection
         mediaProjection?.stop()
+        stopProgressUpdates()
         mediaProjection = null
         val serviceIntent = Intent(this, MediaProjectionService::class.java)
         stopService(serviceIntent)
@@ -927,17 +954,17 @@ class MainActivity : AppCompatActivity() {
         // 延迟500ms，等待 MediaController 准备好
         Handler(Looper.getMainLooper()).postDelayed({
             if (isConnected && isDancing) {
-                // 尝试从 mediaController 获取播放状态
                 val controller = mediaController
                 if (controller != null) {
                     val state = controller.playbackState
                     val isPlaying = state?.state == PlaybackState.STATE_PLAYING
                     if (isPlaying) {
                         sendCommand("FE 55 10 F0 55 FE")
+                        // 直接设置 lastPlayingState，不打印日志（避免启动时额外输出）
+                        lastPlayingState = true
                         appendLog("▶️ 启动律动（自动检测到音乐播放）")
                     }
                 } else {
-                    // 如果 mediaController 还没拿到，通过通知状态判断（lastPlayingState）
                     if (lastPlayingState) {
                         sendCommand("FE 55 10 F0 55 FE")
                         appendLog("▶️ 启动律动（根据通知状态）")
@@ -959,6 +986,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun processAudioChunk(audioBytes: ByteArray): Boolean {
         if (!lastPlayingState) {
+            appendLog("lastPlayingState:$lastPlayingState")
             // 音乐暂停，不处理任何音频
             return false
         }
@@ -1413,14 +1441,28 @@ class MainActivity : AppCompatActivity() {
     private fun connectToLastDevice() {
         if (!checkBluetoothEnabled()) return
         val lastAddr = getLastAddress()
-        if (lastAddr != null) {
+        if (!lastAddr.isNullOrEmpty()) {
             tvStatus.text = "尝试连接上次设备 $lastAddr..."
             appendLog("🔗 尝试连接上次设备")
-            val device = bluetoothAdapter?.getRemoteDevice(lastAddr)
-            if (device != null) {
-                connectDevice(device)
-                return
+            try {
+                val device = bluetoothAdapter?.getRemoteDevice(lastAddr)
+                if (device != null) {
+                    connectDevice(device)
+                    // 设置一个超时，如果3秒后仍未连接成功，则清除地址并扫描
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (!isConnected) {
+                            appendLog("⚠️ 上次设备连接超时，清除地址并扫描新设备")
+                            saveLastAddress("")  // 清除保存的地址
+                            startScan()
+                        }
+                    }, 3000)
+                    return
+                }
+            } catch (e: Exception) {
+                appendLog("❌ 获取上次设备失败: ${e.message}")
             }
+            // 如果走到这里，说明上次设备无效
+            saveLastAddress("")  // 清除无效地址
         }
         // 无保存地址或获取失败，启动扫描
         startScan()
@@ -1470,8 +1512,20 @@ class MainActivity : AppCompatActivity() {
                     // 过滤：名称包含 "MIDBOW1S"（不区分大小写）
                     if (name.uppercase().contains("MIDBOW1S")) {
                         appendLog("📡 发现目标: $name ($address) RSSI=$rssi")
-                        scanResultMap[address] = device
-                        scanRssiMap[address] = rssi
+                        // 如果当前没有连接任何设备，立即连接第一个发现的
+                        if (!isConnected && bluetoothGatt == null) {
+                            appendLog("✅ 立即连接发现的设备: $name")
+                            // 停止扫描
+                            bluetoothAdapter?.bluetoothLeScanner?.stopScan(this)
+                            isScanning = false
+                            // 保存地址并连接
+                            saveLastAddress(address)
+                            connectDevice(device)
+                        } else {
+                            // 如果已经有连接尝试，缓存其他设备
+                            scanResultMap[address] = device
+                            scanRssiMap[address] = rssi
+                        }
                     } else {
                         // 可选：打印所有发现设备用于调试
                         appendLog("📡 发现: $name ($address)")
@@ -1521,6 +1575,11 @@ class MainActivity : AppCompatActivity() {
             @Suppress("DEPRECATION")
             bluetoothAdapter?.stopLeScan(null)
         }
+        // 如果已经通过立即连接建立了连接，就不再处理
+        if (isConnected) {
+            appendLog("✅ 已建立连接，忽略扫描超时")
+            return
+        }
         // 选择 RSSI 最强的设备
         if (scanResultMap.isEmpty()) {
             tvStatus.text = "未找到设备"
@@ -1528,6 +1587,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val bestEntry = scanRssiMap.maxByOrNull { it.value }
+
         if (bestEntry != null) {
             val bestAddress = bestEntry.key
             val bestDevice = scanResultMap[bestAddress]
@@ -1567,14 +1627,19 @@ class MainActivity : AppCompatActivity() {
                 appendLog("🔄 尝试重连... (第${reconnectAttempts}次)")
                 // 传入 isManual = false，避免重置计数器
                 val lastAddr = getLastAddress()
-                if (lastAddr != null) {
-                    val device = bluetoothAdapter?.getRemoteDevice(lastAddr)
-                    if (device != null) {
-                        connectDevice(device, isManual = false)
-                    } else {
-                        // 设备地址无效，增加计数并继续
+                if (!lastAddr.isNullOrEmpty()) {
+                    try {
+                        val device = bluetoothAdapter?.getRemoteDevice(lastAddr)
+                        if (device != null) {
+                            connectDevice(device, isManual = false)
+                        } else {
+                            reconnectAttempts++
+                            appendLog("⚠️ 设备地址无效，重试次数+1")
+                        }
+                    } catch (e: IllegalArgumentException) {
+                        // 捕获地址格式异常
                         reconnectAttempts++
-                        appendLog("⚠️ 设备地址无效，重试次数+1")
+                        appendLog("⚠️ 蓝牙地址格式错误: ${e.message}")
                     }
                 } else {
                     // 无保存地址，直接增加计数
@@ -1840,6 +1905,63 @@ class MainActivity : AppCompatActivity() {
 
 
 
+//    private fun updateMusicUI(
+//        title: String,
+//        artist: String,
+//        isPlaying: Boolean,
+//        duration: Long,
+//        position: Long,
+//        token: MediaSession.Token?
+//    ) {
+//        runOnUiThread {
+//            // 1. 更新标题和艺术家（广播数据优先）
+//            if (title.isNotEmpty()) {
+//                tvMusicTitle.text = title
+//            } else {
+//                // 如果标题为空，根据播放状态显示占位符
+//                tvMusicTitle.text = if (isPlaying) "未知歌曲" else "未播放"
+//            }
+//            tvMusicArtist.text = if (artist.isNotEmpty()) " - $artist" else ""
+//
+//            // 2. 更新播放按钮（必须立即更新）
+//            btnPlayPause.setImageResource(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play)
+//
+//            // 3. 更新进度（如果有 duration 和 position）
+//            if (duration > 0) {
+//                tvMusicDuration.text = formatTime(duration)
+//                musicDuration = duration
+//                musicProgressBar.max = 100
+//                val prog = if (position >= 0 && duration > 0) (position.toFloat() / duration * 100).toInt().coerceIn(0, 100) else 0
+//                musicProgressBar.progress = prog
+//                tvMusicPosition.text = if (position >= 0) formatTime(position) else "--:--"
+//                musicProgressBar.isEnabled = true
+//            } else {
+//                tvMusicDuration.text = "--:--"
+//                musicProgressBar.progress = 0
+//                tvMusicPosition.text = "--:--"
+//                musicProgressBar.isEnabled = false
+//            }
+//
+//            // 4. 处理 MediaController（异步获取精确数据）
+//            if (token != null) {
+//                mediaController?.unregisterCallback(mediaControllerCallback)
+//                mediaController = MediaController(this, token)
+//                mediaController?.registerCallback(mediaControllerCallback)
+//                // 立即刷新一次补充数据（但不会覆盖标题）
+//                updateUIFromController()
+//                startProgressUpdates()
+//            } else {
+//                // 无 token 且未播放时，重置UI
+//                if (!isPlaying && title.isEmpty()) {
+//                    mediaController?.unregisterCallback(mediaControllerCallback)
+//                    mediaController = null
+//                    resetUI()
+//                    stopProgressUpdates()
+//                }
+//            }
+//        }
+//    }
+
     private fun updateMusicUI(
         title: String,
         artist: String,
@@ -1848,20 +1970,119 @@ class MainActivity : AppCompatActivity() {
         position: Long,
         token: MediaSession.Token?
     ) {
+        // 更新状态（仅在有效数据时更新）
+        if (title.isNotEmpty() || isPlaying) {
+            lastPlayingState = isPlaying
+            lastMusicTitle = title
+        }
+        appendLog("updateMusicUI:MusicUI,updateMusicUI: title=$title, artist=$artist, isPlaying=$isPlaying, duration=$duration, position=$position, token=$token")
+        // 🔥 防覆盖：如果当前已有有效的播放信息，且新传入的数据为空或无效，则忽略
+        if (lastMusicTitle.isNotEmpty() && lastPlayingState) {
+            if (title.isEmpty() && !isPlaying && duration <= 0) {
+                appendLog("⚠️ 忽略空数据广播，保留当前UI")
+                return
+            }
+        }
+        // 1. 立即更新 UI（使用传入的数据）
+        runOnUiThread {
+            if (title.isNotEmpty()) {
+                tvMusicTitle.text = title
+            } else {
+                // 如果标题为空，但播放状态为 true，显示“未知歌曲”
+                tvMusicTitle.text = if (isPlaying) "未知歌曲" else "未播放"
+            }
+            tvMusicArtist.text = if (artist.isNotEmpty()) " - $artist" else ""
+            btnPlayPause.setImageResource(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play)
+
+            if (duration > 0) {
+                tvMusicDuration.text = formatTime(duration)
+                musicDuration = duration
+                musicProgressBar.max = 100
+                val prog = if (position >= 0 && duration > 0) (position.toFloat() / duration * 100).toInt().coerceIn(0, 100) else 0
+                musicProgressBar.progress = prog
+                tvMusicPosition.text = if (position >= 0) formatTime(position) else "--:--"
+                musicProgressBar.isEnabled = true
+            } else {
+                tvMusicDuration.text = "--:--"
+                musicProgressBar.progress = 0
+                tvMusicPosition.text = "--:--"
+                musicProgressBar.isEnabled = false
+            }
+        }
+
+        // 2. 处理 MediaController（用于后续精确数据和回调）
         if (token != null) {
-            // 使用系统 MediaController
-            mediaController = MediaController(this, token)
-            // 注册回调
-            mediaController?.registerCallback(mediaControllerCallback)
-            // 立即刷新 UI
-            updateUIFromController()
-        } else {
-            // 无 token，重置状态
             mediaController?.unregisterCallback(mediaControllerCallback)
-            mediaController = null
-            resetUI()
+            mediaController = MediaController(this, token)
+            mediaController?.registerCallback(mediaControllerCallback)
+            // 立即刷新一次补充精确数据（但不会覆盖标题）
+            updateUIFromController()
+            startProgressUpdates()
+            // 记录状态，避免广播重复更新
+//            lastPlayingState = isPlaying
+//            lastMusicTitle = title
+        } else {
+            // 无 token 且未播放时，重置 UI（但不会覆盖已经显示的内容）
+            if (!isPlaying && title.isEmpty()) {
+                mediaController?.unregisterCallback(mediaControllerCallback)
+                mediaController = null
+                resetUI()
+                stopProgressUpdates()
+            }
+        }
+
+    }
+
+
+    private fun startProgressUpdates() {
+        stopProgressUpdates() // 先停止旧的
+        progressUpdateRunnable = object : Runnable {
+            override fun run() {
+                updateProgressFromController()
+                // 每隔 500ms 刷新一次
+                handler.postDelayed(this, 500)
+            }
+        }
+        handler.post(progressUpdateRunnable!!)
+    }
+
+    private fun stopProgressUpdates() {
+        progressUpdateRunnable?.let { handler.removeCallbacks(it) }
+        progressUpdateRunnable = null
+    }
+
+    private fun updateProgressFromController() {
+        val controller = mediaController ?: return
+        val playbackState = controller.playbackState
+        val metadata = controller.metadata
+        if (playbackState != null && metadata != null) {
+            val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
+            val position = playbackState.position
+            val isPlaying = playbackState.state == PlaybackState.STATE_PLAYING
+            runOnUiThread {
+                // 只在非拖动状态下更新进度条
+                if (!isDragging) {
+                    if (duration > 0) {
+                        musicProgressBar.max = 100
+                        val progress = (position.toFloat() / duration * 100).toInt().coerceIn(0, 100)
+                        musicProgressBar.progress = progress
+                        tvMusicPosition.text = formatTime(position)
+                        tvMusicDuration.text = formatTime(duration)
+                        musicProgressBar.isEnabled = true
+                    } else {
+                        musicProgressBar.progress = 0
+                        tvMusicPosition.text = "--:--"
+                        tvMusicDuration.text = "--:--"
+                        musicProgressBar.isEnabled = false
+                    }
+                }
+                // 按钮状态总是更新
+                btnPlayPause.setImageResource(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play)
+            }
         }
     }
+
+
     private fun updateUIFromController() {
         val controller = mediaController ?: return
         val playbackState = controller.playbackState
@@ -1881,13 +2102,10 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // 更新播放状态和进度
+            // 更新播放状态和进度（仅 UI，不修改 lastPlayingState）
             if (playbackState != null) {
                 val isPlaying = playbackState.state == PlaybackState.STATE_PLAYING
-                if (isPlaying != lastPlayingState) {
-                    lastPlayingState = isPlaying
-                    // 可选：触发额外逻辑（如暂停/恢复音频处理）
-                }
+                // 移除对 lastPlayingState 的修改
                 btnPlayPause.setImageResource(
                     if (isPlaying) android.R.drawable.ic_media_pause
                     else android.R.drawable.ic_media_play
@@ -1902,10 +2120,6 @@ class MainActivity : AppCompatActivity() {
                     tvMusicPosition.text = "--:--"
                 }
             } else {
-                // 如果 playbackState 为 null，可认为未播放
-                if (lastPlayingState != false) {
-                    lastPlayingState = false
-                }
                 btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
                 musicProgressBar.progress = 0
                 tvMusicPosition.text = "--:--"
@@ -2180,4 +2394,61 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun fetchCurrentMediaInfo() {
+        try {
+            val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val activeSessions = mediaSessionManager.getActiveSessions(
+                ComponentName(this, MusicNotificationListenerService::class.java)
+            )
+            if (activeSessions.isNotEmpty()) {
+                val controller = activeSessions.first()
+                val metadata = controller.metadata
+                val playbackState = controller.playbackState
+                if (metadata != null) {
+                    val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE) ?: ""
+                    val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: ""
+                    val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
+                    val position = playbackState?.position ?: 0
+                    val isPlaying = playbackState?.state == PlaybackState.STATE_PLAYING
+                    val token = controller.sessionToken
+
+                    // 立即更新 UI
+                    updateMusicUI(title, artist, isPlaying, duration, position, token)
+
+                    // 保存 controller 并注册回调
+                    mediaController = controller
+                    mediaController?.registerCallback(mediaControllerCallback)
+                    startProgressUpdates()
+
+                    // 记录状态
+                    lastPlayingState = isPlaying
+                    lastMusicTitle = title
+                    appendLog("🎵 主动拉取音乐信息: $title - $artist")
+                }
+            } else {
+                appendLog("⏳ 无活跃 MediaSession，等待通知广播")
+            }
+        } catch (e: Exception) {
+            appendLog("❌ 主动拉取失败: ${e.message}")
+        }
+    }
+    private val sessionCallback = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
+        controllers?.firstOrNull()?.let { controller ->
+            val token = controller.sessionToken
+            val metadata = controller.metadata
+            if (metadata != null) {
+                updateMusicUI(
+                    metadata.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "",
+                    metadata.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "",
+                    controller.playbackState?.state == PlaybackState.STATE_PLAYING,
+                    metadata.getLong(MediaMetadata.METADATA_KEY_DURATION),
+                    controller.playbackState?.position ?: 0,
+                    token
+                )
+                mediaController = controller
+                mediaController?.registerCallback(mediaControllerCallback)
+                startProgressUpdates()
+            }
+        }
+    }
 }

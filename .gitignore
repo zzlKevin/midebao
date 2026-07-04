@@ -67,3 +67,9 @@ gradle-app.setting
 .gradle/file-system.probe
 .gradle/8.2/executionHistory/executionHistory.bin
 .gradle/**
+.gradle/8.2/executionHistory/executionHistory.bin
+.gradle/8.2/executionHistory/executionHistory.lock
+.gradle/8.2/fileHashes/fileHashes.bin
+.gradle/8.2/fileHashes/fileHashes.lock
+.gradle/buildOutputCleanup/buildOutputCleanup.lock
+*.lock

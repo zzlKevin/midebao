@@ -86,6 +86,9 @@
                     android:id="@+id/tvMusicPosition"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minWidth="40dp"
+                    android:ellipsize="none"
+                    android:maxLines="1"
                     android:text="0:00"
                     android:textSize="12sp"
                     android:textColor="#888888" />
