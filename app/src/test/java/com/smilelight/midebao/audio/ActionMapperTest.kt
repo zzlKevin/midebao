@@ -16,7 +16,8 @@ import org.junit.Test
  * 3. computeSwitchingPenalty 在同码时返回 0.0。
  * 4. computeSwitchingPenalty 在跨码时返回正值。
  * 5. selectBest 返回得分最高的动作。
- * 6. SelectionResult 的 shouldSwitch 在得分差超过阈值时为 true。
+ * 6. selectBest 在 BPM 无效时返回 null。
+ * 7. shouldSwitch 在驻留节拍不足时为 false。
  */
 class ActionMapperTest {
 
@@ -54,23 +55,19 @@ class ActionMapperTest {
 
     @Test
     fun `switching penalty is positive for different code`() {
-        val penalty = mapper.computeSwitchingPenalty("F5", "F3")
-        assertTrue("penalty $penalty should be positive for different codes", penalty > 0.0)
+        val penalty = mapper.computeSwitchingPenalty("F4", "F3")
+        assertTrue("penalty $penalty should be positive for different code", penalty > 0.0)
     }
 
     @Test
-    fun `switching penalty is smaller for same speedable code different level`() {
-        val penaltySameSpeedable = mapper.computeSwitchingPenalty("F3", "F3")
-        val penaltyOther = mapper.computeSwitchingPenalty("F4", "F3")
-        // 同码惩罚为 0，跨码惩罚 > 0
-        assertTrue(
-            "same code penalty ($penaltySameSpeedable) should be <= other penalty ($penaltyOther)",
-            penaltySameSpeedable <= penaltyOther
-        )
+    fun `selectBest returns null when BPM is zero`() {
+        val state = MusicState.EMPTY
+        val result = mapper.selectBest(state, currentActionCode = "F8", currentSpeedLevel = 2, beatsSinceSwitch = 100)
+        assertTrue("selectBest should return null when BPM is 0", result == null)
     }
 
     @Test
-    fun `selectBest returns non-null result`() {
+    fun `selectBest returns non-null for valid state`() {
         val state = MusicState(
             bpm = 120.0,
             energy = 0.5,
@@ -82,32 +79,12 @@ class ActionMapperTest {
             midEnergy = 0.4,
             highEnergy = 0.2
         )
-        val result = mapper.selectBest(state, currentActionCode = "F8", currentHoldBeats = 10)
-        assertNotNull("selectBest should return a non-null result", result)
+        val result = mapper.selectBest(state, currentActionCode = "F8", currentSpeedLevel = 2, beatsSinceSwitch = 100)
+        assertNotNull("selectBest should return non-null for valid state", result)
     }
 
     @Test
-    fun `selectBest returns bestAction from catalog`() {
-        val state = MusicState(
-            bpm = 120.0,
-            energy = 0.5,
-            brightness = 0.3,
-            complexity = 0.2,
-            stability = 0.8f,
-            rawPe = 0.5,
-            bassEnergy = 0.4,
-            midEnergy = 0.4,
-            highEnergy = 0.2
-        )
-        val result = mapper.selectBest(state, currentActionCode = "F8", currentHoldBeats = 10)
-        assertTrue(
-            "bestAction should be in catalog",
-            result.bestAction.actionCode in ActionCatalog.allActions.map { it.actionCode }
-        )
-    }
-
-    @Test
-    fun `shouldSwitch is false when hold beats below minimum`() {
+    fun `selectBest bestAction is in catalog`() {
         val state = MusicState(
             bpm = 120.0,
             energy = 0.9,
@@ -119,10 +96,32 @@ class ActionMapperTest {
             midEnergy = 0.4,
             highEnergy = 0.2
         )
-        val result = mapper.selectBest(state, currentActionCode = "F8", currentHoldBeats = 0)
+        val result = mapper.selectBest(state, currentActionCode = "F8", currentSpeedLevel = 2, beatsSinceSwitch = 100)
+        assertNotNull(result)
+        assertTrue(
+            "bestAction should be in catalog",
+            result!!.bestAction.actionCode in ActionCatalog.all.map { it.actionCode }
+        )
+    }
+
+    @Test
+    fun `shouldSwitch is false when beatsSinceSwitch is zero`() {
+        val state = MusicState(
+            bpm = 120.0,
+            energy = 0.9,
+            brightness = 0.9,
+            complexity = 0.9,
+            stability = 0.8f,
+            rawPe = 0.9,
+            bassEnergy = 0.4,
+            midEnergy = 0.4,
+            highEnergy = 0.2
+        )
+        val result = mapper.selectBest(state, currentActionCode = "F8", currentSpeedLevel = 2, beatsSinceSwitch = 0)
+        assertNotNull(result)
         assertFalse(
-            "shouldSwitch should be false when holdBeats < minHoldBeats",
-            result.shouldSwitch
+            "shouldSwitch should be false when beatsSinceSwitch is 0",
+            result!!.shouldSwitch
         )
     }
 
@@ -139,9 +138,10 @@ class ActionMapperTest {
             midEnergy = 0.4,
             highEnergy = 0.2
         )
-        val result = mapper.selectBest(state, currentActionCode = "F8", currentHoldBeats = 100)
+        val result = mapper.selectBest(state, currentActionCode = "F8", currentSpeedLevel = 2, beatsSinceSwitch = 100)
+        assertNotNull(result)
         assertTrue(
-            "bestScore (${result.bestScore}) should be >= currentScore (${result.currentScore})",
+            "bestScore (${result!!.bestScore}) should be >= currentScore (${result.currentScore})",
             result.bestScore >= result.currentScore - 0.001
         )
     }

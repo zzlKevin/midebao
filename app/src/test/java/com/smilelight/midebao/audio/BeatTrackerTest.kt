@@ -13,9 +13,9 @@ import org.junit.Test
  * 2. process() 正确调用 aubio 接口。
  * 3. 半速修正：BPM 在 30~80 区间时 ×2。
  * 4. BPM 平滑：smoothedBpm 逐步收敛到真实值。
- * 5. 节拍间隔统计：连续节拍后 beatIntervalsMs 正确记录。
+ * 5. 节拍间隔统计：连续节拍后 predictNextBeatMs 返回正值。
  * 6. reset() 清除所有状态。
- * 7. predictNextBeatTimeMs 在样本不足时返回 -1。
+ * 7. predictNextBeatMs 在样本不足时返回 -1。
  */
 class BeatTrackerTest {
 
@@ -56,8 +56,8 @@ class BeatTrackerTest {
 
         // 60 * 2 = 120 BPM（半速修正后）
         assertTrue(
-            "smoothedBpm (${tracker.smoothedBpm}) should be near 120 after half-speed correction",
-            tracker.smoothedBpm > 100.0
+            "smoothedBpm (${tracker.smoothedBpm}) should be near 120 after half-speed correction of 60",
+            tracker.smoothedBpm > 100.0 && tracker.smoothedBpm < 140.0
         )
     }
 
@@ -90,8 +90,8 @@ class BeatTrackerTest {
     }
 
     @Test
-    fun `predictNextBeatTimeMs returns minus 1 when not enough beats`() {
-        val result = tracker.predictNextBeatTimeMs(nowMs = 5000L)
+    fun `predictNextBeatMs returns minus 1 when not enough beats`() {
+        val result = tracker.predictNextBeatMs(nowMs = 5000L)
         assertEquals(-1L, result)
     }
 
@@ -111,9 +111,9 @@ class BeatTrackerTest {
         tracker.process(samples, nowMs = 1000L)
 
         // 预测下一拍应该返回一个正数
-        val predicted = tracker.predictNextBeatTimeMs(nowMs = 1000L)
+        val predicted = tracker.predictNextBeatMs(nowMs = 1000L)
         assertTrue(
-            "predictNextBeatTimeMs should return positive value after enough beats, got $predicted",
+            "predictNextBeatMs should return positive value after enough beats, got $predicted",
             predicted > 0L
         )
     }

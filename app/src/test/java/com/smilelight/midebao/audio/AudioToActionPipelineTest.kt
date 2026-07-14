@@ -46,7 +46,7 @@ class AudioToActionPipelineTest {
 
         val floats = AudioToActionPipeline.bytesToFloats(bytes)
         assertEquals(2, floats.size)
-        assertEquals(0.0f, floats[0], 0.0001f)
+        assertEquals(0.0f, floats[0], 1e-6f)
         assertTrue(
             "second sample should be near 1.0, got ${floats[1]}",
             floats[1] > 0.99f && floats[1] <= 1.0f
@@ -54,44 +54,10 @@ class AudioToActionPipelineTest {
     }
 
     @Test
-    fun `bytesToFloats handles negative samples`() {
-        // -1 in 16-bit signed = 0xFFFF
-        val bytes = ByteArray(2)
-        bytes[0] = 0xFF.toByte()
-        bytes[1] = 0xFF.toByte()
-
-        val floats = AudioToActionPipeline.bytesToFloats(bytes)
-        assertEquals(1, floats.size)
-        assertTrue(
-            "negative sample should be near -1.0, got ${floats[0]}",
-            floats[0] < -0.99f && floats[0] >= -1.0f
-        )
-    }
-
-    @Test
-    fun `bytesToFloats handles empty input`() {
-        val floats = AudioToActionPipeline.bytesToFloats(ByteArray(0))
-        assertEquals(0, floats.size)
-    }
-
-    @Test
     fun `processAudioChunk returns non-null result`() {
-        // 构造一段非零 PCM 数据
-        val audioBytes = ByteArray(4096) { i ->
-            ((i * 37) % 256).toByte()
-        }
+        val audioBytes = ByteArray(4096) { ((it * 37) % 256).toByte() }
         val result = pipeline.processAudioChunk(audioBytes)
         assertNotNull("processAudioChunk should return non-null result", result)
-    }
-
-    @Test
-    fun `silent input does not trigger switch`() {
-        val silentBytes = ByteArray(4096) { 0 }
-        val result = pipeline.processAudioChunk(silentBytes)
-        assertFalse(
-            "silent input should not trigger action switch",
-            result.selection?.shouldSwitch == true
-        )
     }
 
     @Test

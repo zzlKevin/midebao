@@ -36,7 +36,7 @@ class BeatTracker(
      * @return [BeatInfo]：是否为节拍、当前 BPM、节拍样本位置。
      */
     fun process(samples: FloatArray, nowMs: Long = System.currentTimeMillis()): BeatInfo {
-        val rawBpm = aubio.getTempo(samples)
+        val rawBpm = aubio.getTempo(samples).toDouble()
         val lastBeatSample = aubio.getLastBeatSample()
 
         // 半速修正

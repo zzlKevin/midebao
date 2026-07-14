@@ -28,7 +28,7 @@ class AubioProcessor : AubioProcessorLike {
      * 输入一帧采样，返回当前 BPM。
      * 实现 [AubioProcessorLike.getTempo]。
      */
-    override external fun getTempo(input: FloatArray?): Float
+    override external fun getTempo(input: FloatArray): Float
 
     /**
      * 返回最近一次节拍对应的样本位置。

@@ -52,8 +52,8 @@ class AudioFeatureExtractorTest {
     }
 
     @Test
-    fun `frequency band energies sum to approximately 1`() {
-        val samples = FloatArray(2048) { (Math.random() * 0.4 - 0.2).toFloat() }
+    fun `band energy ratios sum to approximately 1`() {
+        val samples = FloatArray(2048) { (Math.sin(it * 0.01) * 0.5).toFloat() }
         val features = extractor.extract(samples)
         val sum = features.bassEnergy + features.midEnergy + features.highEnergy
         assertEquals(1.0, sum, 0.15)
