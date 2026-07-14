@@ -74,3 +74,4 @@ gradle-app.setting
 .gradle/buildOutputCleanup/buildOutputCleanup.lock
 *.lock
 local.properties
+/.idea
