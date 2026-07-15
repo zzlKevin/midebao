@@ -99,6 +99,9 @@ class MainActivity : AppCompatActivity() {
      */
     private var pipeline: AudioToActionPipeline? = null
 
+    /** MediaSession 监听是否已注册（防止重复注册）。 */
+    private var mediaSessionListenerRegistered = false
+
     /** 管道配置（集中管理所有可调参数）。 */
     private val pipelineConfig = PipelineConfig()
 
@@ -334,7 +337,23 @@ class MainActivity : AppCompatActivity() {
         // 主动查询当前播放状态
         fetchCurrentMediaInfo()
         mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
-        mediaSessionManager.addOnActiveSessionsChangedListener(sessionCallback, ComponentName(this, MusicNotificationListenerService::class.java))
+
+        // 检查通知监听权限（必须在 addOnActiveSessionsChangedListener 之前，
+        // 否则未授权时会抛 SecurityException 导致闪退）
+        if (!isNotificationListenerEnabled()) {
+            AlertDialog.Builder(this)
+                .setTitle("需要通知监听权限")
+                .setMessage("为了获取音乐播放信息（歌名、进度、控制等），需要开启通知监听权限。\n\n点击“去设置”后，请找到并允许 “${getString(R.string.app_name)}” 的通知监听。")
+                .setPositiveButton("去设置") { _, _ ->
+                    openNotificationAccessSettings()
+                }
+                .setNegativeButton("稍后", null)
+                .setCancelable(false)
+                .show()
+        } else {
+            // 已授权，注册 MediaSession 监听
+            registerMediaSessionListener()
+        }
 
         // 初始设置为动作1，档位2，不暂停
         motionView.setAction("F3", 2, paused = false)
@@ -359,18 +378,6 @@ class MainActivity : AppCompatActivity() {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
             }
-        }
-        // 检查通知监听权限
-        if (!isNotificationListenerEnabled()) {
-            AlertDialog.Builder(this)
-                .setTitle("需要通知监听权限")
-                .setMessage("为了获取音乐播放信息（歌名、进度、控制等），需要开启通知监听权限。\n\n点击“去设置”后，请找到并允许 “${getString(R.string.app_name)}” 的通知监听。")
-                .setPositiveButton("去设置") { _, _ ->
-                    openNotificationAccessSettings()
-                }
-                .setNegativeButton("稍后", null)
-                .setCancelable(false)
-                .show()
         }
         // 设置按钮点击事件
         btnPrev.setOnClickListener {
@@ -634,6 +641,16 @@ class MainActivity : AppCompatActivity() {
         connectToLastDevice()
         // 初始化音乐面板（无歌曲）
         //updateMusicUI("", "", false, -1, -1,null)
+    }
+
+    /**
+     * 用户从通知监听设置页返回时，重新检查权限并注册监听。
+     */
+    override fun onResume() {
+        super.onResume()
+        if (isNotificationListenerEnabled() && !mediaSessionListenerRegistered) {
+            registerMediaSessionListener()
+        }
     }
 
     override fun onDestroy() {
@@ -1916,6 +1933,24 @@ class MainActivity : AppCompatActivity() {
     private fun isNotificationListenerEnabled(): Boolean {
         val enabledListeners = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
         return enabledListeners?.contains(packageName) == true
+    }
+
+    /**
+     * 注册 MediaSession 监听。
+     * 必须在通知监听权限已授予后调用，否则会抛 SecurityException。
+     * 用 try-catch 兜底，防止权限被用户中途撤销时闪退。
+     */
+    private fun registerMediaSessionListener() {
+        if (mediaSessionListenerRegistered) return
+        try {
+            mediaSessionManager.addOnActiveSessionsChangedListener(
+                sessionCallback,
+                ComponentName(this, MusicNotificationListenerService::class.java)
+            )
+            mediaSessionListenerRegistered = true
+        } catch (e: SecurityException) {
+            android.util.Log.w("MainActivity", "注册 MediaSession 监听失败：缺少通知监听权限", e)
+        }
     }
 
 
