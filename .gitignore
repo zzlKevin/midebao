@@ -74,5 +74,3 @@ gradle-app.setting
 .gradle/buildOutputCleanup/buildOutputCleanup.lock
 *.lock
 /.idea
-/.idea
-/.idea

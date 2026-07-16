@@ -134,7 +134,7 @@ class MainActivity : AppCompatActivity() {
                 val token = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     intent.getParcelableExtra<MediaSession.Token>("media_session_token")
                 } else null
-                appendLog("📡 收到广播: title=$title, lastMusicTitle=$lastMusicTitle, artist=$artist, isPlaying=$isPlaying, duration=$duration")
+                // appendLog("📡 收到广播: title=$title, lastMusicTitle=$lastMusicTitle, artist=$artist, isPlaying=$isPlaying, duration=$duration")
                 runOnUiThread {
                     // 1. 处理切歌（检测到新歌名）
                     if (title.isNotEmpty() && title != lastMusicTitle) {
@@ -213,8 +213,8 @@ class MainActivity : AppCompatActivity() {
 
     // 音乐特征缓存（供 UI 显示，由 audioEngine 更新）
     private var currentBpmEstimate = 0.0
-    // 切换阈值（可由 UI 调节，默认 0.10）
-    private var switchThreshold = 0.10
+    // 切换阈值（可由 UI 调节，默认 0.25，调高以减少频繁切换）
+    private var switchThreshold = 0.25
 
 //    private var listScanCallback: ScanCallback? = null
 //    private lateinit var deviceListView: ListView

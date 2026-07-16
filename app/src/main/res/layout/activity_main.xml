@@ -17,7 +17,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="🎵 免费律动控制器"
+            android:text="🎵 免费律动控制器 (NoAubio)"
             android:textSize="22sp"
             android:textStyle="bold"
             android:gravity="center"
@@ -459,13 +459,13 @@
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:max="6"
-                android:progress="2" /> <!-- 0.15 对应 progress=2 -->
+                android:progress="4" /> <!-- 0.25 对应 progress=4 -->
 
             <TextView
                 android:id="@+id/tvThresholdValue"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="0.15"
+                android:text="0.25"
                 android:textSize="12sp" />
         </LinearLayout>
 
