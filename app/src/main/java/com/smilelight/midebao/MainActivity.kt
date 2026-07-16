@@ -152,7 +152,7 @@ class MainActivity : AppCompatActivity() {
                 val token = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     intent.getParcelableExtra<MediaSession.Token>("media_session_token")
                 } else null
-                appendLog("📡 收到广播: title=$title, lastMusicTitle=$lastMusicTitle, artist=$artist, isPlaying=$isPlaying, duration=$duration")
+                // appendLog("📡 收到广播: title=$title, lastMusicTitle=$lastMusicTitle, artist=$artist, isPlaying=$isPlaying, duration=$duration")
                 runOnUiThread {
                     // 1. 处理切歌（检测到新歌名）
                     if (title.isNotEmpty() && title != lastMusicTitle) {
@@ -296,6 +296,7 @@ class MainActivity : AppCompatActivity() {
     private var isDancing = false
     private var beatCounter = 0
     private var frequencyDivider = 2
+    private var frameCounter = 0
 
     private val handler = Handler(Looper.getMainLooper())
     private var audioJob: Job? = null
@@ -982,15 +983,36 @@ class MainActivity : AppCompatActivity() {
         val pipe = pipeline ?: return false
         val result = pipe.processAudioChunk(audioBytes)
 
-        // 更新能量条（低频能量占比）
+        // 更新能量条（低频能量占比）—— 每帧更新，所以频谱一直在动
         val progress = (result.state.bassEnergy * 100).coerceIn(0.0, 100.0).toInt()
         handler.post { energyBar.progress = progress }
+
+        // 每帧更新 PE / BPM / 动作状态（不再依赖 onBeatDetected，避免无节拍时一直空白）
+        handler.post {
+            val state = result.state
+            val peStr = String.format("%.2f", state.energy)
+            tvPE.text = "PE: $peStr"
+            if (state.bpm > 0.0) {
+                tvBPM.text = "BPM: ${state.bpm.toInt()}"
+            }
+            val actionName = actionDisplayNameMap[currentActionCode] ?: currentActionCode
+            tvActionStatus.text = "动作: $actionName (档${currentSpeedLevel})"
+        }
+
+        // 每 20 帧更新一次动态冷却时间（避免每帧调用开销）
+        if (frameCounter % 20 == 0) {
+            updateDynamicCooldowns()
+        }
+        frameCounter++
 
         // 更新 BPM 日志（仅整数部分变化时打印，避免刷屏）
         val bpmInt = result.beatInfo.bpm.toInt()
         if (bpmInt != lastLoggedBpmInt && bpmInt > 0) {
             lastLoggedBpmInt = bpmInt
-            if (result.beatInfo.bpm !in 20.0..250.0 && beatCounter % 10 == 0) {
+            if (result.beatInfo.bpm in 20.0..250.0) {
+                // BPM 有效，打印当前值
+                appendLog("🎵 BPM: ${result.beatInfo.bpm.toInt()} (raw: ${result.beatInfo.rawBpm.toInt()})")
+            } else if (beatCounter % 10 == 0) {
                 appendLog("⏳ 等待 BPM 稳定... (当前: ${result.beatInfo.bpm})")
             }
         }
@@ -1000,34 +1022,55 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * 节拍回调：每检测到一拍调用一次。
-     * 1. 递增节拍计数，按 [frequencyDivider] 周期更新 UI 显示。
-     * 2. 自适应模式下，根据管道输出的 [SelectionResult] 决定是否切换动作。
+     * 1. 递增节拍计数。
+     * 2. 自适应模式下，按 [frequencyDivider] 周期根据管道输出的 [SelectionResult] 决定是否切换动作。
+     *
+     * 注意：PE / BPM / 动作状态 的 UI 更新已移到 [processAudioChunk] 中每帧执行，
+     * 不再依赖节拍回调，避免 aubio 未检测到节拍时 UI 一直空白。
      */
     private fun onBeatDetected() {
         if (!isDancing) return
         beatCounter++
 
+        // 节拍日志（每 frequencyDivider 拍打印一次，让用户看到节拍在跑）
         if (beatCounter % frequencyDivider == 0) {
-            val state = pipeline?.lastResult?.state ?: MusicState.EMPTY
-            val peStr = String.format("%.2f", state.energy)
-            tvPE.text = "PE: $peStr"
-            tvBPM.text = "BPM: ${state.bpm.toInt()}"
-            val actionName = actionDisplayNameMap[currentActionCode] ?: currentActionCode
-            tvActionStatus.text = "动作: $actionName (档${currentSpeedLevel})"
+            val bpm = pipeline?.lastResult?.state?.bpm ?: 0.0
+            appendLog("🥁 拍 #$beatCounter  BPM: ${bpm.toInt()}")
         }
 
         // 自适应模式：根据管道选择结果切换动作
         if (isAdaptiveMode && beatCounter % frequencyDivider == 0) {
             val pipe = pipeline ?: return
             val selection = pipe.lastResult?.selection ?: return
+            val nowMs = System.currentTimeMillis()
             if (selection.shouldSwitch) {
-                appendLog("⚡ 切换动作: ${selection.bestAction.actionCode} 档${selection.bestAction.speedLevel} " +
-                    "(得分差: ${String.format("%.3f", selection.scoreDiff)}, 原因: ${selection.reason})")
-                switchAction(selection.bestAction.actionCode)
-                if (selection.bestAction.isSpeedable) {
-                    setSpeedLevel(selection.bestAction.speedLevel)
+                // 冷却检查：动作切换需满足冷却时间
+                val actionCodeChanged = selection.bestAction.actionCode != currentActionCode
+                val speedChanged = selection.bestAction.isSpeedable &&
+                    selection.bestAction.speedLevel != currentSpeedLevel
+
+                val actionCooldownOk = !actionCodeChanged ||
+                    (nowMs - lastActionSwitchTime) >= currentActionCooldownMs
+                val speedCooldownOk = !speedChanged ||
+                    (nowMs - lastSpeedChangeTime) >= currentSpeedCooldownMs
+
+                if (!actionCooldownOk) {
+                    appendLog("⏸️ 动作冷却中 (剩余 ${currentActionCooldownMs - (nowMs - lastActionSwitchTime)}ms)")
+                } else if (!speedCooldownOk) {
+                    appendLog("⏸️ 速度冷却中 (剩余 ${currentSpeedCooldownMs - (nowMs - lastSpeedChangeTime)}ms)")
+                } else {
+                    appendLog("⚡ 切换动作: ${selection.bestAction.actionCode} 档${selection.bestAction.speedLevel} " +
+                        "(得分差: ${String.format("%.3f", selection.scoreDiff)}, 原因: ${selection.reason})")
+                    if (actionCodeChanged) {
+                        switchAction(selection.bestAction.actionCode)
+                        lastActionSwitchTime = nowMs
+                    }
+                    if (speedChanged && selection.bestAction.isSpeedable) {
+                        setSpeedLevel(selection.bestAction.speedLevel)
+                        lastSpeedChangeTime = nowMs
+                    }
+                    pipe.setCurrentAction(selection.bestAction.actionCode, selection.bestAction.speedLevel)
                 }
-                pipe.setCurrentAction(selection.bestAction.actionCode, selection.bestAction.speedLevel)
             } else {
                 appendLog("⏭️ 不切换 (${selection.reason})")
             }
@@ -1059,6 +1102,9 @@ class MainActivity : AppCompatActivity() {
             isDancing = true
             btnDance.text = "⏹ 停止舞蹈"
             beatCounter = 0
+            frameCounter = 0
+            lastActionSwitchTime = 0L
+            lastSpeedChangeTime = 0L
             appendLog("🎵 开始随乐起舞")
         } else {
             // 停止舞蹈时，可以选择暂停动画或继续显示最后一帧
@@ -1628,9 +1674,6 @@ class MainActivity : AppCompatActivity() {
         // 2. 如果已连接，发送指令
         if (isConnected) {
             sendCommand("FE 55 10 F2 55 FE")
-            tvPE.text = "PE: ----"
-            tvBPM.text = "BPM: ----"
-            tvActionStatus.text = "动作: ----"
             Thread.sleep(100)
             sendCommand(actionMap[actionCode] ?: return)
             Thread.sleep(100)

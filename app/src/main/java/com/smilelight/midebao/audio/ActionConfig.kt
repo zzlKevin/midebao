@@ -139,7 +139,7 @@ data class PipelineConfig(
     val switchingPenaltyWeight: Double = 0.10,
     val switchingPenaltySameSpeedable: Double = 0.3,
     val switchingPenaltyOther: Double = 0.6,
-    var switchThreshold: Double = 0.08,
+    var switchThreshold: Double = 0.15,
     val bpmSmoothingFactor: Double = 0.8,
     val bpmHalfSpeedRange: ClosedFloatingPointRange<Double> = 30.0..80.0,
     val bpmValidRange: ClosedFloatingPointRange<Double> = 20.0..250.0,
